@@ -145,10 +145,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true  
     }
     if (message.action === "checkToken") {
-        const { token } = message;
-
-        // Ensure async response by returning true
-        checkToken(token, sendResponse);
+        (async () => {
+            try {
+                const { token } = message;
+                const result = await checkToken(token);
+                sendResponse({ res: result })
+            } catch (error) {
+                sendResponse({ res: error })
+            }
+        })();
         return true  
     }
     if(message.action === "initUserDetails") {
@@ -218,12 +223,14 @@ async function signUp(email, password, sendResponse) {
 async function signIn(email, password, sendResponse) {
 
     try {
+        let username = ""
         await signInWithEmailAndPassword(
             auth, 
             email, 
             password
         ).then(async cred => {
             const user = cred.user;
+            username = user.email
             const token = await user.getIdToken();
             
             chrome.storage.local.set({ token: token })
@@ -234,7 +241,7 @@ async function signIn(email, password, sendResponse) {
             throw new Error(`${error}`);
         });
         
-        sendResponse({ res: "Success" });
+        sendResponse({ res: "Success", user: username });
     } catch (error) {
         sendResponse({ res: `Error signing in. Please try again.${error}` });
     }
@@ -310,20 +317,20 @@ const updateDetails = async (sendResponse) => {
     sendResponse({ res: "Success"})
 }
 
-async function checkToken(token, sendResponse) {
+async function checkToken(token, ) {
+    const authUser = auth.currentUser;
+    if(!authUser || !token) {
+        throw new Error(`User not valid, Please try again.`);
+    }
+    
     try {
-        const authUser = auth.currentUser;
-        if(!authUser || !token) {
-            return "Error"
-        }
-        
         const refreshToken = await authUser.getIdToken();
         chrome.storage.local.set({ token: refreshToken })
-
-        sendResponse({ res: "Success" });
     } catch (error) {
-        sendResponse({ res: `Error checking token, Please try again. ${error}` });
+        throw new Error(`Error checking token: ${error}`);
     }
+
+    return "Success";
 }
 
 async function getUserData() {
@@ -439,17 +446,29 @@ async function generateAIReply(emailAddress, emailText, links, userPrompt, attac
         });
 
         const aiReply = await getAIResponse(emailAddress, emailText, userPrompt, links, attachments);
+
+        console.log(aiReply)
         
         let tempReply = JSON.parse(aiReply)
+
+        console.log(tempReply)
+        console.log("Pared the JSON")
         tempReply["email"] = emailText
         tempReply["datetime"] = new Date().toLocaleString()
  
-        let list = await chrome.storage.local.get(["responseList"])
-        list = list.responseList
-        if(JSON.stringify(list) === '{}')
+        let { responseList } = await chrome.storage.local.get(["responseList"])
+        console.log(responseList)
+        
+        if(responseList == undefined)
+            responseList = []
+        console.log("")
+
+        if(JSON.stringify(responseList) === '{}')
             chrome.storage.local.set({ responseList: JSON.stringify([JSON.stringify(tempReply)]) })
         else
-            chrome.storage.local.set({ responseList: JSON.stringify([...JSON.parse(list), JSON.stringify(tempReply)]) })
+            chrome.storage.local.set({ responseList: JSON.stringify([...JSON.parse(responseList), JSON.stringify(tempReply)]) })
+
+        console.log("before here is the error")
 
         if (tempReply.scam_rating > 7) {
             warned++
@@ -513,7 +532,8 @@ async function getAIResponse(emailAddress, emailText, userPrompt, links, attachm
 
     const { token } = await chrome.storage.local.get("token");
 
-    const attachmentScores = await scanFiles(attachments)
+    // const attachmentScores = await scanFiles(attachments)
+    const attachmentScores = []
 
     const res = await fetch("https://api-ix3qevgnuq-uk.a.run.app/fetch-scam-rating", {
         method: "POST",
@@ -561,6 +581,8 @@ const scanUrl = async (url, sendResponse) => {
 }
 
 const scanFiles = async (attachmentsList) => {
+    if(attachmentsList < 1 || attachmentsList == undefined) return [];
+
     let filesResults = []
     
     const attachments = await getAttachments(attachmentsList)

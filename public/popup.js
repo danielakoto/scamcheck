@@ -1,4 +1,4 @@
-
+const version = "1.3"
 
 const appHTML = `
     <div id="app">
@@ -76,7 +76,7 @@ const profileHTML = `
                 </div>
                 <div id="profile-details">
                     <div id="details-head">
-                        <h4 class="detail">Plan: <span id="profile-subscribtion"></span></h4>
+                        <h4 class="detail">Plan: <span id="profile-subscription"></span></h4>
                         <h4 id="credits" class="detail">Credits: <span id="profile-credits"></span></h4>
                     </div>
                     <div id="profile-upgrade-content" style="display: none;">
@@ -119,7 +119,7 @@ const historyHTML = `
     
 const settingsHTML = `
     <div id="settings">
-        <div id="version" class="menu-content-logo">Version: 1.0.0</div>
+        <div id="version" class="menu-content-logo">Version: ${version}</div>
         <div>For support, contact sulcecode@gmail.com</div>
         <button id="privacy-policy" class="button-style">Privacy Policy</button>
         <button id="terms-of-service" class="button-style">Terms of Service</button>
@@ -239,13 +239,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const settingsElement = document.getElementById("settings-icon")
     const signOut = document.getElementById("sign-out-button")
     
-    const setUp = async () => {
+    const setUp = async (user = false) => {
         loadingElement.style.display = "flex"
         let { token } = await chrome.storage.local.get(["token"])
         if(token && token !== null && token !== "") {
             chrome.runtime.sendMessage(
                 { action: "checkToken", token: token },
                 async (response) => {
+                    console.log(response)
                     if(response.res === "Success") {
                         body.innerHTML = appHTML
                         menuElement.style.display = "flex"
@@ -267,8 +268,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                         const hint = document.getElementById("hint")
 
                         document.getElementById("sign-out-button").style.display = "flex"
-                        const { username } = await chrome.storage.local.get(["username"])
-                        document.getElementById("username").innerText = username ? username : ""
+                        if(user) {
+                            document.getElementById("username").innerText = user
+                        } else {
+                            const { username } = await chrome.storage.local.get(["username"])
+                            document.getElementById("username").innerText = username ? username : ""
+                        }
 
                         const { scan } = await chrome.storage.local.get(["scan"])
                         if(scan === true) {
@@ -301,7 +306,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                                     emailTextElement.textContent = response.emailBody;
                                     emailTextElement.value = response.emailBody;
                                     tempEmailAddress = response.emailAddress;
-                                    attachmentsElement.innerText = `${response.attachments.length} Attachments Detected`;
+                                    attachmentsElement.innerText = `${response.attachments.length} Attachments Detected - File Scanning Coming Soon.`;
                                     attachments = response.attachments;
                                     links = response.links;
                                 } else {
@@ -375,12 +380,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                         chrome.runtime.sendMessage(
                             { action: "initUserDetails" }
                         )
+                        loadingElement.style.display = "none"
                     } else {
                         window.location.reload()
+                        loadingElement.style.display = "none"
                     }
                 }
             );
-            loadingElement.style.display = "none"
         } else {
             auth = false
             body.innerHTML = signHTML
@@ -394,7 +400,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const password = document.getElementById("password")
             const registerPassword = document.getElementById("register-password")
             
-            signUp.addEventListener("click", async () => {
+            const signUpFunc = () => {
                 loadingElement.style.display = "flex"
                 
                 if(email.value.length < 3 || password.value.length < 8){
@@ -419,31 +425,53 @@ document.addEventListener("DOMContentLoaded", async () => {
                         loadingElement.style.display = "none"
                         if (response.res == "Success") {
                             auth = true
-                            acceptElement.innerText = "Enter"
-                            document.getElementById("notification-modal").style.display = "flex"
-                            document.getElementById("notification-message").innerText = "Welcome!"
+                            const checkbox = document.getElementById('scanToggle');
                             document.getElementById("username").innerText = email.value
                             document.getElementById("sign-out-button").style.display = "flex"
                             const { scan } = await chrome.storage.local.get(["scan"])
                             if(scan === true) {
                                 startElement.style.display = "none"
                                 stopElement.style.display = "flex"
+                                checkbox.checked = true
                             } else {
                                 startElement.style.display = "flex"
                                 stopElement.style.display = "none"
+                                checkbox.checked = false
                             }
                             setUp()
+                            setUp(response.user)
+                            notification("Enter", "flex", `
+                                <h4>Welcome! Would you like to have background scanning for Gmail on?</h4>
+                                <label class="toggle">
+                                    <span class="label">Background scanning is turned OFF</span>
+                                    <input type="checkbox" id="scanToggle">
+                                    <span class="slider"></span>
+                                </label>    
+                            `)
+                            checkbox.addEventListener("change", () => {
+                                const label = document.querySelector('.label');
+
+                                if(checkbox.checked) {
+                                    label.textContent = 'Background scanning is turned ON';
+                                    chrome.runtime.sendMessage({ action: "setStart" });
+                                    startElement.style.display = "none"
+                                    stopElement.style.display = "flex"
+                                } else {
+                                    label.textContent = 'Background scanning is turned OFF';
+                                    chrome.runtime.sendMessage({ action: "setStop" });
+                                    startElement.style.display = "flex"
+                                    stopElement.style.display = "none"
+                                }
+                            })
                         } else {
-                            auth = true
-                            acceptElement.innerText = "Ok"
-                            document.getElementById("notification-modal").style.display = "flex"
-                            document.getElementById("notification-message").innerText = `${response.res}`
+                            auth = false
+                            notification("Ok", "flex", `${response.res}`)
                         }
                     }
                 );
-            });
+            }
             
-            signIn.addEventListener("click", async () => {
+            const signInFunc = () => {
                 loadingElement.style.display = "flex"
                 
                 if(email.value.length < 3 || password.value.length < 8){
@@ -461,7 +489,31 @@ document.addEventListener("DOMContentLoaded", async () => {
                         loadingElement.style.display = "none"
                         if(response.res == "Success") {
                             auth = true
-                            setUp()
+                            setUp(response.user)
+                            notification("Save", "flex", `
+                                <h4>Would you like to have background scanning for Gmail on?</h4>
+                                <label class="toggle">
+                                    <span class="label">Background scanning is turned OFF</span>
+                                    <input type="checkbox" id="scanToggle">
+                                    <span class="slider"></span>
+                                </label>    
+                            `)
+                            const checkbox = document.getElementById('scanToggle');
+                            checkbox.addEventListener("change", () => {
+                                const label = document.querySelector('.label');
+
+                                if(checkbox.checked) {
+                                    label.textContent = 'Background scanning is turned ON';
+                                    chrome.runtime.sendMessage({ action: "setStart" });
+                                    startElement.style.display = "none"
+                                    stopElement.style.display = "flex"
+                                } else {
+                                    label.textContent = 'Background scanning is turned OFF';
+                                    chrome.runtime.sendMessage({ action: "setStop" });
+                                    startElement.style.display = "flex"
+                                    stopElement.style.display = "none"
+                                }
+                            })
                         } else {
                             auth = false
                             acceptElement.innerText = "Ok"
@@ -470,6 +522,24 @@ document.addEventListener("DOMContentLoaded", async () => {
                         }
                     }
                 );
+            }
+
+            signIn.addEventListener("click", async () => {
+                signInFunc()
+            });
+
+            password.addEventListener("keydown", async (e) => {
+                if (e.key === 'Enter') {
+                    signInFunc()
+                    e.preventDefault();
+                }
+            });
+
+            registerPassword.addEventListener("keydown", async (e) => {
+                if (e.key === 'Enter') {
+                    signUpFunc()
+                    e.preventDefault();
+                }
             });
             
             registerButton.addEventListener("click", async () => {
@@ -498,7 +568,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             (response) => {
                 acceptElement.innerText = "Continue"
                 document.getElementById("notification-modal").style.display = "flex"
-                document.getElementById("notification-message").innerText = "Resumed Background Protection. Refresh this page."
+                document.getElementById("notification-message").innerText = "Background scanning is turned ON."
                 startElement.style.display = "none"
                 stopElement.style.display = "flex"
             }
@@ -511,7 +581,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             (response) => {
                 acceptElement.innerText = "Continue"
                 document.getElementById("notification-modal").style.display = "flex"
-                document.getElementById("notification-message").innerText = "Paused Background Protection. Refresh this page."
+                document.getElementById("notification-message").innerText = "Background scanning is turned OFF."
                 startElement.style.display = "flex"
                 stopElement.style.display = "none"
             }
@@ -670,14 +740,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("profile-username").innerText = username
             
             if(plan == "free") {
-                document.getElementById("profile-subscribtion").innerText = "Free"
+                document.getElementById("profile-subscription").innerText = "Free"
                 document.getElementById("credits").style.display = "block"
                 document.getElementById("profile-credits").innerText = credits
                 document.getElementById("profile-upgrade-content").style.display = "flex"
                 document.getElementById("profile-manage-plan-content").style.display = "none"
                 document.getElementById("profile-end-plan-content").style.display = "none"
             } else {
-                document.getElementById("profile-subscribtion").innerText = "Pro"
+                document.getElementById("profile-subscription").innerText = "Pro"
                 document.getElementById("profile-credits").innerText = "Unlimited"
                 document.getElementById("credits").style.display = "none"
                 document.getElementById("profile-upgrade-content").style.display = "none"
@@ -770,10 +840,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     })
     signOut.addEventListener("click", async () => {
-        acceptElement.innerText = "Sign Out"
-        document.getElementById("notification-modal").style.display = "flex"
-        document.getElementById("notification-message").innerText = "Signing Out will clear previous scanned emails on history tab. Sign Out?"
+        notification("Sign Out", "flex", "Signing Out will clear previous scanned emails on history tab. Sign Out?")
     });
+    
+    const notification = (accept, display, html) => {
+        acceptElement.innerText = accept
+        document.getElementById("notification-modal").style.display = display
+        document.getElementById("notification-message").innerHTML = html
+    }
 });
 
 async function getCurrentTab() {
