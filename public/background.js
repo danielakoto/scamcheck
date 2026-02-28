@@ -446,29 +446,22 @@ async function generateAIReply(emailAddress, emailText, links, userPrompt, attac
         });
 
         const aiReply = await getAIResponse(emailAddress, emailText, userPrompt, links, attachments);
-
-        console.log(aiReply)
         
         let tempReply = JSON.parse(aiReply)
 
-        console.log(tempReply)
-        console.log("Pared the JSON")
+
         tempReply["email"] = emailText
         tempReply["datetime"] = new Date().toLocaleString()
  
         let { responseList } = await chrome.storage.local.get(["responseList"])
-        console.log(responseList)
         
         if(responseList == undefined)
             responseList = []
-        console.log("")
 
         if(JSON.stringify(responseList) === '{}')
             chrome.storage.local.set({ responseList: JSON.stringify([JSON.stringify(tempReply)]) })
         else
             chrome.storage.local.set({ responseList: JSON.stringify([...JSON.parse(responseList), JSON.stringify(tempReply)]) })
-
-        console.log("before here is the error")
 
         if (tempReply.scam_rating > 7) {
             warned++

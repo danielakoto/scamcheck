@@ -246,7 +246,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             chrome.runtime.sendMessage(
                 { action: "checkToken", token: token },
                 async (response) => {
-                    console.log(response)
                     if(response.res === "Success") {
                         body.innerHTML = appHTML
                         menuElement.style.display = "flex"
